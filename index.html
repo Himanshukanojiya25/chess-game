@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Clean Dark Chess Game</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron&display=swap');
+
+  body {
+    margin: 0;
+    background: #121212;
+    color: #ddd;
+    font-family: 'Orbitron', monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    user-select: none;
+  }
+
+  .container {
+    display: flex;
+    gap: 30px;
+  }
+
+  .game-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .timers {
+    display: flex;
+    justify-content: space-between;
+    width: 560px;
+    margin-bottom: 12px;
+    font-weight: 700;
+    font-size: 24px;
+    text-shadow:
+      0 0 5px #6699ff,
+      0 0 10px #3366cc;
+  }
+
+  .timer {
+    padding: 12px 30px;
+    border: 2px solid #3366cc;
+    border-radius: 15px;
+    box-shadow:
+      0 0 12px #6699ff,
+      inset 0 0 15px #3355bb;
+    background: #1a1a1a;
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 70px);
+    grid-template-rows: repeat(8, 70px);
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow:
+      0 0 25px #224488aa,
+      inset 0 0 30px #224488bb;
+  }
+
+  .cell {
+    width: 70px;
+    height: 70px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 52px;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: background-color 0.3s ease;
+    color: transparent;
+    user-select: none;
+  }
+
+  /* Cell colors */
+  .white {
+    background-color: #f0f0f0;
+  }
+
+  .black {
+    background-color: #2c3e50;
+  }
+
+  /* White piece style */
+  .white-piece {
+    color: #f9f9f9;
+    text-shadow:
+      0 0 5px #a9c9ff,
+      0 0 15px #659eff;
+  }
+
+  /* Black piece style */
+  .black-piece {
+    color: #111;
+    filter: drop-shadow(0 0 3px #3f51b5);
+  }
+
+  /* Highlight legal moves */
+  .highlight {
+    background-color: #88c0ffaa !important;
+    box-shadow: 0 0 15px 5px #5a8dee;
+  }
+
+  /* Highlight capture moves */
+  .capture {
+    background-color: #ff6f61cc !important;
+    box-shadow: 0 0 20px 6px #ff4c3b;
+  }
+
+  .history {
+    width: 280px;
+    background: #1c2331;
+    border-radius: 15px;
+    padding: 18px;
+    box-shadow: 0 0 20px #3355bb;
+    color: #a9b9ff;
+    font-weight: 600;
+    font-size: 18px;
+    max-height: 600px;
+    overflow-y: auto;
+  }
+
+  .history h3 {
+    margin-top: 0;
+    text-align: center;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #3355bb;
+    padding-bottom: 10px;
+    font-size: 26px;
+    color: #7799ff;
+    text-shadow: 0 0 8px #5577dd;
+  }
+
+  .history ul {
+    list-style: none;
+    padding-left: 15px;
+  }
+
+  .history li {
+    margin-bottom: 8px;
+  }
+
+  button {
+    margin-top: 20px;
+    padding: 14px 34px;
+    font-size: 20px;
+    font-weight: 700;
+    background: #3355bb;
+    color: white;
+    border: none;
+    border-radius: 18px;
+    box-shadow: 0 0 18px #5577dd;
+    cursor: pointer;
+    transition: background 0.3s ease;
+  }
+
+  button:hover {
+    background: #5577dd;
+    box-shadow: 0 0 25px #99bbff;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="game-area">
+      <div class="timers">
+        <div id="blackTimer" class="timer">Black: 0s</div>
+        <div id="whiteTimer" class="timer">White: 0s</div>
+      </div>
+      <div id="board" class="board"></div>
+      <button onclick="resetGame()">Reset Game</button>
+    </div>
+    <div class="history">
+      <h3>Move History</h3>
+      <ul id="moveHistory"></ul>
+    </div>
+  </div>
+
+<script>
+  const boardEl = document.getElementById('board');
+  const historyEl = document.getElementById('moveHistory');
+  const whiteTimerEl = document.getElementById('whiteTimer');
+  const blackTimerEl = document.getElementById('blackTimer');
+
+  // Unicode chess pieces
+  const piecesUnicode = {
+    r: "♜", n: "♞", b: "♝", q: "♛", k: "♚", p: "♟",
+    R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔", P: "♙"
+  };
+
+  // Board array with correct orientation:
+  // White pieces at bottom (uppercase), Black pieces at top (lowercase)
+  let boardState = [
+    "r","n","b","q","k","b","n","r",
+    "p","p","p","p","p","p","p","p",
+    "","","","","","","","",
+    "","","","","","","","",
+    "","","","","","","","",
+    "","","","","","","","",
+    "P","P","P","P","P","P","P","P",
+    "R","N","B","Q","K","B","N","R"
+  ];
+
+  let currentPlayer = "white";
+  let selected = null;
+  let whiteSeconds = 0;
+  let blackSeconds = 0;
+  let interval;
+
+  function updateTimers() {
+    if(currentPlayer === "white") whiteSeconds++;
+    else blackSeconds++;
+
+    whiteTimerEl.textContent = `White: ${whiteSeconds}s`;
+    blackTimerEl.textContent = `Black: ${blackSeconds}s`;
+  }
+
+  function drawBoard() {
+    boardEl.innerHTML = "";
+    boardState.forEach((piece, i) => {
+      const cell = document.createElement("div");
+      // color pattern: top-left is black cell, alternates
+      cell.className = "cell " + (((Math.floor(i/8) + i) % 2 === 0) ? "white" : "black");
+
+      // piece content and coloring
+      cell.textContent = piecesUnicode[piece] || "";
+      if(piece) {
+        if(piece === piece.toUpperCase()) {
+          cell.classList.add("white-piece");
+        } else {
+          cell.classList.add("black-piece");
+        }
+      }
+      cell.dataset.index = i;
+      cell.onclick = () => onCellClick(i);
+      boardEl.appendChild(cell);
+    });
+  }
+
+  function clearHighlights() {
+    document.querySelectorAll(".highlight, .capture").forEach(el => {
+      el.classList.remove("highlight", "capture");
+    });
+  }
+
+  // Simple legal moves logic for demonstration (pawn + rook + knight only for example)
+  // This can be expanded later for full chess rules.
+
+  function onCellClick(index) {
+    clearHighlights();
+
+    const piece = boardState[index];
+
+    if(selected !== null) {
+      // Try to move if valid
+      if(canMove(selected, index)) {
+        movePiece(selected, index);
+        selected = null;
+        return;
+      } else {
+        selected = null;
+      }
+    }
+
+    // Select only current player's pieces
+    if(piece && (currentPlayer === "white" ? piece === piece.toUpperCase() : piece === piece.toLowerCase())) {
+      selected = index;
+      showLegalMoves(index);
+    }
+  }
+
+  // Simple move legality for demo only (pawn forward, knight jumps, rook straight)
+  function canMove(from, to) {
+    const piece = boardState[from];
+    if(!piece) return false;
+
+    const isWhite = piece === piece.toUpperCase();
+    const target = boardState[to];
+
+    if(target && (target.toUpperCase() === piece.toUpperCase())) return false; // no capture own piece
+
+    // Convert index to coords
+    const fx = from % 8, fy = Math.floor(from / 8);
+    const tx = to % 8, ty = Math.floor(to / 8);
+
+    const dx = tx - fx;
+    const dy = ty - fy;
+
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    const pieceLower = piece.toLowerCase();
+
+    if(pieceLower === 'p') {
+      // Pawns move direction
+      const dir = isWhite ? -1 : 1;
+
+      // Normal move
+      if(dx === 0 && dy === dir && !target) return true;
+
+      // Double move from starting pos
+      const startRow = isWhite ? 6 : 1;
+      if(dx === 0 && dy === 2*dir && fy === startRow && !target && !boardState[from + 8*dir]) return true;
+
+      // Captures
+      if(absDx === 1 && dy === dir && target && ((isWhite && target === target.toLowerCase()) || (!isWhite && target === target.toUpperCase()))) return true;
+
+      return false;
+    }
+
+    if(pieceLower === 'r') {
+      if(dx !== 0 && dy !== 0) return false; // rook moves straight only
+
+      // Check path clear
+      let stepX = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+      let stepY = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+
+      let x = fx + stepX;
+      let y = fy + stepY;
+
+      while(x !== tx || y !== ty) {
+        if(boardState[y*8 + x] !== "") return false;
+        x += stepX;
+        y += stepY;
+      }
+
+      return true;
+    }
+
+    if(pieceLower === 'n') {
+      // knight moves in L shape
+      if((absDx === 1 && absDy === 2) || (absDx === 2 && absDy === 1)) return true;
+      return false;
+    }
+
+    // For other pieces allow all moves (for demo simplicity)
+    return true;
+  }
+
+  function movePiece(from, to) {
+    const piece = boardState[from];
+    const target = boardState[to];
+
+    boardState[to] = piece;
+    boardState[from] = "";
+
+    addMoveToHistory(piece, from, to, target);
+
+    currentPlayer = currentPlayer === "white" ? "black" : "white";
+
+    clearHighlights();
+    drawBoard();
+  }
+
+  function addMoveToHistory(piece, from, to, captured) {
+    const cols = "abcdefgh";
+    const fromPos = cols[from % 8] + (8 - Math.floor(from / 8));
+    const toPos = cols[to % 8] + (8 - Math.floor(to / 8));
+    let moveStr = `${piece.toUpperCase()} ${fromPos} → ${toPos}`;
+    if(captured) moveStr += " ✖";
+    const li = document.createElement("li");
+    li.textContent = moveStr;
+    historyEl.appendChild(li);
+    historyEl.scrollTop = historyEl.scrollHeight;
+  }
+
+  function showLegalMoves(index) {
+    const piece = boardState[index];
+    if(!piece) return;
+
+    for(let i=0; i<64; i++) {
+      if(canMove(index, i)) {
+        const cell = boardEl.children[i];
+        if(boardState[i] === "") {
+          cell.classList.add("highlight");
+        } else {
+          cell.classList.add("capture");
+        }
+      }
+    }
+  }
+
+  function resetGame() {
+    boardState = [
+      "r","n","b","q","k","b","n","r",
+      "p","p","p","p","p","p","p","p",
+      "","","","","","","","",
+      "","","","","","","","",
+      "","","","","","","","",
+      "","","","","","","","",
+      "P","P","P","P","P","P","P","P",
+      "R","N","B","Q","K","B","N","R"
+    ];
+    currentPlayer = "white";
+    whiteSeconds = 0;
+    blackSeconds = 0;
+    historyEl.innerHTML = "";
+    clearInterval(interval);
+    interval = setInterval(updateTimers, 1000);
+    drawBoard();
+  }
+
+  resetGame();
+</script>
+</body>
+</html>
